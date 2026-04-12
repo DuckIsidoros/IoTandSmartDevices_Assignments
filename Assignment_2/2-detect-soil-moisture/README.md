@@ -1,0 +1,1 @@
+- I take and write this data from my family's rubber plantation land.

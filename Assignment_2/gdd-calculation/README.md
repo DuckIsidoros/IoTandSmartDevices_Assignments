@@ -1,0 +1,6 @@
+- The components of this IoT project:
+  - Arduino Uno
+  - Soil moisture sensor (TH)
+  - Temperature sensor (DS18B20)
+  - A resistor for Temperature sensor.
+- Because the data is taken within a day so I'll process each 10 mins as 1 date (in the requirement).
