@@ -1,20 +1,18 @@
 import azure.functions as func
 import logging
 
-# Khởi tạo Function App
 app = func.FunctionApp()
 
-# 1. Thiết lập Trigger từ Event Hub
 @app.event_hub_message_trigger(
     arg_name="azeventhub", 
-    event_hub_name="telementary-hub", # My even hub name inside namespace
-    connection="MyEventHubConn"   # Tên biến trong local.settings.json
+    event_hub_name="telementary-hub", 
+    connection="MyEventHubConn"  
 ) 
 # Set up the output
 @app.blob_output(
     arg_name="outputBlob",
     path="telemetry/{rand-guid}.json", 
-    connection="AzureWebJobsStorage"   # This is variable in my local.settings.json.
+    connection="AzureWebJobsStorage"  
 )
 def ProcessSensorData(azeventhub: func.EventHubEvent, outputBlob: func.Out[str]):
     # Read the raw data from Evet Hub:
