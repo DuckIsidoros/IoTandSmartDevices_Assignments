@@ -1,0 +1,381 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>GPS Location Visualizer</title>
+
+    <!-- Azure Maps CSS -->
+    <link
+      rel="stylesheet"
+      href="https://atlas.microsoft.com/sdk/javascript/mapcontrol/2/atlas.min.css"
+      type="text/css"
+    />
+
+    <style>
+      html,
+      body {
+        margin: 0;
+        padding: 0;
+        height: 100%;
+        font-family: "Segoe UI", Tahoma, Geneva, Verdana, sans-serif;
+      }
+
+      #myMap {
+        width: 100%;
+        height: 100%;
+      }
+
+      .loading-overlay {
+        position: absolute;
+        top: 50%;
+        left: 50%;
+        transform: translate(-50%, -50%);
+        background: rgba(0, 0, 0, 0.7);
+        color: white;
+        padding: 20px 40px;
+        border-radius: 8px;
+        z-index: 1000;
+        font-size: 18px;
+        display: none;
+      }
+
+      .info-panel {
+        position: absolute;
+        bottom: 30px;
+        left: 10px;
+        background: rgba(255, 255, 255, 0.9);
+        padding: 15px;
+        border-radius: 8px;
+        box-shadow: 0 2px 10px rgba(0, 0, 0, 0.2);
+        z-index: 1000;
+        max-width: 250px;
+      }
+
+      .info-panel h3 {
+        margin: 0 0 10px 0;
+        color: #333;
+      }
+
+      .info-panel p {
+        margin: 5px 0;
+        color: #666;
+        font-size: 14px;
+      }
+
+      .stats {
+        position: absolute;
+        top: 10px;
+        right: 10px;
+        background: rgba(255, 255, 255, 0.9);
+        padding: 15px;
+        border-radius: 8px;
+        box-shadow: 0 2px 10px rgba(0, 0, 0, 0.2);
+        z-index: 1000;
+      }
+
+      .stats h3 {
+        margin: 0 0 10px 0;
+        color: #333;
+      }
+
+      .stats p {
+        margin: 5px 0;
+        color: #666;
+        font-size: 14px;
+      }
+
+      .error-message {
+        position: absolute;
+        top: 50%;
+        left: 50%;
+        transform: translate(-50%, -50%);
+        background: rgba(255, 0, 0, 0.8);
+        color: white;
+        padding: 20px 40px;
+        border-radius: 8px;
+        z-index: 1000;
+        font-size: 16px;
+        display: none;
+      }
+    </style>
+  </head>
+  <body onload="init()">
+    <div id="myMap"></div>
+
+    <div class="loading-overlay" id="loadingOverlay">Loading GPS data...</div>
+
+    <div class="error-message" id="errorMessage">
+      Error loading data. Please check console for details.
+    </div>
+
+    <div class="stats" id="stats">
+      <h3>📊 GPS Statistics</h3>
+      <p>Total Points: <span id="pointCount">0</span></p>
+      <p>Path Distance: <span id="distance">Calculating...</span></p>
+    </div>
+
+    <div class="info-panel">
+      <h3>📍 GPS Location Visualizer</h3>
+      <p>Displaying GPS data from Azure Blob Storage</p>
+      <p>Path of movement shown with bubbles</p>
+      <p style="margin-top: 10px; font-style: italic">Azure Maps + IoT</p>
+    </div>
+
+    <!-- Azure Maps JavaScript SDK -->
+    <script src="https://atlas.microsoft.com/sdk/javascript/mapcontrol/2/atlas.min.js"></script>
+
+    <script type="text/javascript">
+      // Global variables
+      var map;
+      var features = [];
+      var dataSource;
+      var pointCount = 0;
+      var coordinates = [];
+
+      // Replace with your storage account name
+      const STORAGE_ACCOUNT_NAME = "gpsdatastorage2024";
+
+      async function init() {
+        try {
+          // Show loading overlay
+          document.getElementById("loadingOverlay").style.display = "block";
+
+          // Fetch the Azure Maps subscription key from the secure API endpoint
+          const keyResponse = await fetch("/api/maps-key");
+
+          if (!keyResponse.ok) {
+            throw new Error("Failed to fetch Azure Maps key");
+          }
+
+          const keyData = await keyResponse.json();
+          const subscriptionKey = keyData.key; // ✅ FIXED: Use the fetched key
+
+          // Initialize the map with the fetched key
+          map = new atlas.Map("myMap", {
+            center: [-122.26473, 47.73444], // Default center (Seattle area)
+            zoom: 12,
+            authOptions: {
+              authType: "subscriptionKey",
+              subscriptionKey: subscriptionKey, // ✅ Now uses the fetched key
+            },
+          });
+
+          // Wait for the map to be ready before adding data
+          map.events.add("ready", async function () {
+            // Create a data source and add it to the map
+            dataSource = new atlas.source.DataSource();
+            map.sources.add(dataSource);
+
+            // Add a bubble layer to visualize the points
+            map.layers.add(
+              new atlas.layer.BubbleLayer(dataSource, null, {
+                color: [
+                  "interpolate",
+                  ["linear"],
+                  ["get", "index"],
+                  0,
+                  "#FF4444", // Start - Red
+                  "max",
+                  "#4444FF", // End - Blue
+                ],
+                radius: 8,
+                strokeWidth: 2,
+                strokeColor: "white",
+                tooltip: ["get", "tooltip"],
+              }),
+            );
+
+            // Add a line layer to connect the points
+            map.layers.add(
+              new atlas.layer.LineLayer(dataSource, null, {
+                strokeColor: "#6666FF",
+                strokeWidth: 2,
+                strokeOpacity: 0.6,
+              }),
+            );
+
+            // Load GPS data from blob storage
+            await loadGPSData();
+
+            // Hide loading overlay
+            document.getElementById("loadingOverlay").style.display = "none";
+
+            // Update statistics
+            updateStatistics();
+          });
+        } catch (error) {
+          console.error("Initialization error:", error);
+          document.getElementById("loadingOverlay").style.display = "none";
+          document.getElementById("errorMessage").style.display = "block";
+          document.getElementById("errorMessage").textContent =
+            "Error: " + error.message;
+        }
+      }
+
+      async function loadGPSData() {
+        try {
+          // Fetch the list of blobs from the storage container
+          const containerUrl = `https://${STORAGE_ACCOUNT_NAME}.blob.core.windows.net/gps-data/?restype=container&comp=list`;
+          const response = await fetch(containerUrl);
+
+          if (!response.ok) {
+            throw new Error(
+              `Failed to fetch blob list: ${response.status} ${response.statusText}`,
+            );
+          }
+
+          const xmlText = await response.text();
+          const parser = new DOMParser();
+          const xmlDoc = parser.parseFromString(xmlText, "text/xml");
+
+          // Extract all blob URLs
+          const blobUrls = Array.from(xmlDoc.querySelectorAll("Url"));
+
+          console.log(`Found ${blobUrls.length} GPS data files`);
+
+          if (blobUrls.length === 0) {
+            console.warn("No GPS data files found in storage container");
+            return;
+          }
+
+          // Load each blob and parse the GPS data
+          const loadPromises = blobUrls.map(async (blobUrl, index) => {
+            try {
+              const url = blobUrl.innerHTML;
+              const gpsResponse = await fetch(url);
+
+              if (!gpsResponse.ok) {
+                console.error(`Failed to fetch ${url}: ${gpsResponse.status}`);
+                return null;
+              }
+
+              const gpsData = await gpsResponse.json();
+              return { ...gpsData, index };
+            } catch (error) {
+              console.error(
+                `Error loading GPS data from ${blobUrl.innerHTML}:`,
+                error,
+              );
+              return null;
+            }
+          });
+
+          // Wait for all blobs to load
+          const gpsResults = await Promise.all(loadPromises);
+
+          // Filter out failed loads and sort by timestamp if available
+          const validGpsData = gpsResults
+            .filter(
+              (data) =>
+                data !== null && data.gps && data.gps.lat && data.gps.lon,
+            )
+            .sort((a, b) => {
+              // Try to sort by timestamp if available
+              if (a.timestamp && b.timestamp) {
+                return new Date(a.timestamp) - new Date(b.timestamp);
+              }
+              return a.index - b.index;
+            });
+
+          console.log(`Successfully loaded ${validGpsData.length} GPS points`);
+
+          // Create GeoJSON features from the GPS data
+          validGpsData.forEach((data, idx) => {
+            const lat = parseFloat(data.gps.lat);
+            const lon = parseFloat(data.gps.lon);
+
+            // Store coordinates for distance calculation
+            coordinates.push([lon, lat]);
+
+            // Create a point feature
+            const point = new atlas.data.Point([lon, lat]);
+            const feature = new atlas.data.Feature(point, {
+              index: idx,
+              tooltip: `Point ${idx + 1}<br/>Lat: ${lat.toFixed(6)}<br/>Lon: ${lon.toFixed(6)}${data.timestamp ? "<br/>Time: " + new Date(data.timestamp).toLocaleString() : ""}`,
+            });
+
+            features.push(feature);
+          });
+
+          // Add all features to the data source
+          if (features.length > 0) {
+            dataSource.add(features);
+            pointCount = features.length;
+
+            // If we have points, center the map on the first point
+            if (coordinates.length > 0) {
+              map.setCamera({
+                center: coordinates[0],
+                zoom: 14,
+              });
+            }
+
+            // If we have enough points, fit the map to show all of them
+            if (coordinates.length > 1) {
+              setTimeout(() => {
+                map.setCamera({
+                  bounds: atlas.data.BoundingBox.fromLatLngs(
+                    coordinates.map((coord) => [coord[1], coord[0]]),
+                  ),
+                  padding: 50,
+                });
+              }, 500);
+            }
+          }
+
+          // If we have coordinates, create a line string feature for the path
+          if (coordinates.length > 1) {
+            const lineString = new atlas.data.LineString(coordinates);
+            const lineFeature = new atlas.data.Feature(lineString);
+            dataSource.add(lineFeature);
+          }
+        } catch (error) {
+          console.error("Error loading GPS data:", error);
+          throw error;
+        }
+      }
+
+      function updateStatistics() {
+        document.getElementById("pointCount").textContent = pointCount;
+
+        if (coordinates.length > 1) {
+          const distance = calculateTotalDistance();
+          document.getElementById("distance").textContent =
+            distance.toFixed(2) + " km";
+        } else {
+          document.getElementById("distance").textContent = "N/A";
+        }
+      }
+
+      function calculateTotalDistance() {
+        let totalDistance = 0;
+
+        for (let i = 1; i < coordinates.length; i++) {
+          const [lon1, lat1] = coordinates[i - 1];
+          const [lon2, lat2] = coordinates[i];
+          totalDistance += calculateDistance(lat1, lon1, lat2, lon2);
+        }
+
+        return totalDistance;
+      }
+
+      function calculateDistance(lat1, lon1, lat2, lon2) {
+        // Haversine formula to calculate distance between two points on Earth
+        const R = 6371; // Earth's radius in kilometers
+        const dLat = ((lat2 - lat1) * Math.PI) / 180;
+        const dLon = ((lon2 - lon1) * Math.PI) / 180;
+
+        const a =
+          Math.sin(dLat / 2) * Math.sin(dLat / 2) +
+          Math.cos((lat1 * Math.PI) / 180) *
+            Math.cos((lat2 * Math.PI) / 180) *
+            Math.sin(dLon / 2) *
+            Math.sin(dLon / 2);
+
+        const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+        return R * c;
+      }
+    </script>
+  </body>
+</html>
