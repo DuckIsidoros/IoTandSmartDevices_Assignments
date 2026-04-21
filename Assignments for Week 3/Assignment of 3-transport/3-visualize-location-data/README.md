@@ -1,0 +1,1 @@
+- The link for the web is:white-desert-0a98d4b1e.7.azurestaticapps.net
