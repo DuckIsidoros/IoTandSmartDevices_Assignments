@@ -1,0 +1,7 @@
+Negative
+Ripe Banana
+Ripe Mango
+Ripe Orange
+Unripe Banana
+Unripe Mango
+Unripe Orange

@@ -1,0 +1,1 @@
+- Resource Group: retail-products-detector (southeastasia).

@@ -1,0 +1,1 @@
+- The model is saved in the format of Tensor Lite for IoT Edge Device.

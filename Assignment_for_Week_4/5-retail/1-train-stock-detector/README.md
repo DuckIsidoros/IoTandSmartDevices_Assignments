@@ -1,0 +1,2 @@
+- The model is trained on Retail and Landmarks type.
+- As my observation, the accuracy of retail and landmark domain are not so far different.

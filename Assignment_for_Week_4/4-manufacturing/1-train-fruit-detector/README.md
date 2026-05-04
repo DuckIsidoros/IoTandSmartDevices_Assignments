@@ -1,0 +1,2 @@
+- The dataset is collected from shuttersock.
+- The model is trained on Azure Computer Vision.
